@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaf Health Classifier</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-md p-6 w-full max-w-md">
+        <h1 class="text-2xl font-bold mb-4 text-center">Leaf Health Classifier</h1>
+        <div id="drop-area"
+            class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500 transition-colors">
+            <p class="text-gray-500">Drag & drop an image here, or click to select</p>
+            <input type="file" id="fileInput" class="hidden" accept=".jpg">
+        </div>
+        <p id="file-name" class="mt-2 text-sm text-gray-500"></p>
+        <div id="image-preview" class="mt-4 hidden">
+            <img id="preview-image" class="w-full h-64 object-cover rounded-lg" alt="Preview">
+        </div>
+        <button id="submit-btn" class="mt-4 w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 transition-colors cursor-pointer" disabled>Analyze Leaf</button>
+        <div id="loading" class="hidden mt-4">
+            <div class="loader ease-linear rounded-full border-4 border-t-4 border-gray-200 h-12 w-12 mx-auto"></div>
+        </div>
+        <div id="result" class="mt-4 hidden">
+            <div class="bg-gray-50 rounded-lg p-4 shadow-inner">
+                <div class="flex items-center justify-between mb-2">
+                    <h2 class="text-lg font-semibold">Analysis Result</h2>
+                    <span id="result-emoji" class="text-4xl"></span>
+                </div>
+                <p id="result-text" class="text-gray-700"></p>
+                <div id="result-details" class="mt-2 text-sm text-gray-600"></div>
+            </div>
+        </div>
+    </div>
+    <style>
+        .loader {
+            border-top-color: #3498db;
+            -webkit-animation: spinner 1.5s linear infinite;
+            animation: spinner 1.5s linear infinite;
+        }
+
+        @-webkit-keyframes spinner {
+            0% {
+                -webkit-transform: rotate(0deg);
+            }
+
+            100% {
+                -webkit-transform: rotate(360deg);
+            }
+        }
+
+        @keyframes spinner {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+    <script>
+        const dropArea = document.getElementById('drop-area');
+        const fileInput = document.getElementById('fileInput');
+        const fileName = document.getElementById('file-name');
+        const imagePreview = document.getElementById('image-preview');
+        const previewImage = document.getElementById('preview-image');
+        const submitBtn = document.getElementById('submit-btn');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+
+        const resultEmoji = document.getElementById('result-emoji');
+        const resultText = document.getElementById('result-text');
+        const resultDetails = document.getElementById('result-details');
+
+        const classInfo = {
+            "angular_leaf_spot": {
+                emoji: "🍂",
+                description: "Angular Leaf Spot detected.",
+                details: "This is a fungal disease that affects bean plants. It's characterized by angular, brown lesions on the leaves."
+            },
+            "bean_rust": {
+                emoji: "🦠",
+                description: "Bean Rust identified.",
+                details: "Bean Rust is a fungal disease that causes orange-brown pustules on the leaves. It can significantly reduce crop yield if left untreated."
+            },
+            "healthy": {
+                emoji: "🌿",
+                description: "The leaf appears to be healthy.",
+                details: "No signs of common diseases detected. Continue with regular care and monitoring."
+            }
+        };
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            dropArea.classList.add('border-blue-500');
+        }
+
+        function unhighlight() {
+            dropArea.classList.remove('border-blue-500');
+        }
+
+        dropArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        fileInput.addEventListener('change', function () {
+            handleFiles(this.files);
+        });
+
+        dropArea.addEventListener('click', () => fileInput.click());
+
+        function handleFiles(files) {
+            if (files.length > 0) {
+                const file = files[0];
+                if (file.type === 'image/jpeg') {
+                    fileName.textContent = file.name;
+                    submitBtn.disabled = false;
+                    displayImagePreview(file);
+                    result.classList.add('hidden');
+                } else {
+                    alert('Please select a .jpg file.');
+                    fileName.textContent = '';
+                    submitBtn.disabled = true;
+                    imagePreview.classList.add('hidden');
+                }
+            }
+        }
+
+        function displayImagePreview(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                previewImage.src = e.target.result;
+                imagePreview.classList.remove('hidden');
+            }
+            reader.readAsDataURL(file);
+        }
+
+        submitBtn.addEventListener('click', async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            submitBtn.disabled = true;
+            loading.classList.remove('hidden');
+            result.classList.add('hidden');
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Server error');
+                }
+
+                const data = await response.json();
+                const classData = classInfo[data.prediction];
+                
+                resultEmoji.textContent = classData.emoji;
+                resultText.textContent = classData.description;
+                resultDetails.textContent = classData.details;
+                
+                result.classList.remove('hidden');
+            } catch (error) {
+                console.error('Error:', error);
+                resultText.textContent = 'An error occurred. Please try again.';
+                resultDetails.textContent = '';
+                result.classList.remove('hidden');
+            } finally {
+                submitBtn.disabled = false;
+                loading.classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>
